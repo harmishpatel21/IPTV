@@ -1,21 +1,50 @@
 # IPTV
 
-Prototype IPTV client for Stalker / Ministra (MAG / STBEmu-style) portals.
+A Netflix-style player for IPTV subscriptions delivered through a **Stalker / Ministra portal**
+(the kind used with MAG boxes and STBEmu): live TV with a guide, the provider's Video Club (movies and series),
+search, My List, and Continue Watching with resume.
 
-- `server.js` logs into the portal as a MAG box, exposes a small JSON API, and proxies streams.
-- `public/` is the browser UI: categories, search, favourites, player with now/next EPG.
+It's only a player: bring your own subscription (portal URL + MAC address).
 
-## Run
+| | |
+|---|---|
+| **Android TV app** (`android/`) | Native Kotlin app (Compose for TV + ExoPlayer) for Android TV / Google TV. **[Install guide → DEPLOY.md](DEPLOY.md)** |
+| **Web player** (`server.js`, `public/`) | Small Node server + browser UI. Handy for checking your portal details and for watching on a computer. |
 
-1. Copy `config.example.json` to `config.json` and set `portal` (the URL you use in STBEmu) and `mac`.
-2. `npm start`
-3. Open http://127.0.0.1:3000
+## Features
 
-## Keys
+- **Live TV** — ~all channels by category, now/next programme info, channel up/down
+- **Movies & Shows** — the portal's Video Club with posters, categories by language, sorting, seasons and episodes
+- **Search** across channels, movies and shows (TV app: on-screen keyboard or voice)
+- **Continue Watching** for channels, movies and episodes, with resume and auto-play of the next episode
+- **My List** for channels and titles
+
+## Web player
+
+1. Copy `config.example.json` to `config.json` and fill in `portal` and `mac`
+   (plus `stbModel` / `serialNumber` if your portal needs them — see [DEPLOY.md](DEPLOY.md#1-collect-your-portal-details)).
+2. `npm start` (Node.js 18+, no dependencies)
+3. Open <http://127.0.0.1:3000>
 
 | Key | Action |
 | --- | --- |
-| `/` | Focus search |
-| Up / Down (in player) | Previous / next channel |
-| `i` | Show channel info |
-| Esc / Backspace | Close player |
+| Arrows / Enter | Move around / open |
+| `/` | Search |
+| `F` | Add focused item to My List |
+| Up / Down (live player) | Previous / next channel |
+| ← / → (movie player) | Skip 10 s |
+| Space (movie player) | Pause |
+| `N` (movie player) | Next episode |
+| Esc / Backspace | Back |
+
+## Android TV app
+
+See **[DEPLOY.md](DEPLOY.md)** for building it with your own portal details and installing it on a TV.
+
+## Notes
+
+- `config.json` holds your account details and is git-ignored; the TV app reads it at build time, so never
+  share a built APK.
+- Many providers allow one active device per account — the web player, the TV app and STBEmu may log each
+  other out.
+- Use it only with a subscription you're entitled to.
