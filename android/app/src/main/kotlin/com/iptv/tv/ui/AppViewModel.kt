@@ -12,6 +12,7 @@ import com.iptv.tv.data.Channel
 import com.iptv.tv.data.Episode
 import com.iptv.tv.data.Genre
 import com.iptv.tv.data.Portal
+import com.iptv.tv.data.PortalConfig
 import com.iptv.tv.data.Programme
 import com.iptv.tv.data.Progress
 import com.iptv.tv.data.Recent
@@ -30,7 +31,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
-enum class Tab(val label: String) { Home("Home"), Search("Search"), Live("Live TV"), Movies("Movies & Shows"), MyList("My List") }
+enum class Tab(val label: String) { Home("Home"), Search("Search"), Live("Live TV"), Movies("Movies & Shows"), MyList("My List"), Settings("Settings") }
 
 /** What the live player is showing: a channel within the list it was started from (Up/Down zaps through it). */
 data class LivePlay(val list: List<Channel>, val index: Int)
@@ -48,7 +49,14 @@ fun Progress?.resumeAt(): Long = if (this != null && pos > 30_000 && pos < dur -
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
   private val store = Store(app)
-  val portal = Portal(knownEndpoint = store.endpoint, onEndpoint = { store.endpoint = it })
+
+  /** Current account; null until the viewer completes setup (shareable builds have nothing built in). */
+  var config by mutableStateOf(store.config())
+    private set
+  var portal = newPortal(config ?: PortalConfig("", ""))
+    private set
+
+  private fun newPortal(c: PortalConfig) = Portal(c, store.endpoint, onEndpoint = { store.endpoint = it })
 
   var status by mutableStateOf<String?>("Connecting to portal…")
     private set
@@ -88,7 +96,37 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
   val overlayOpen: Boolean get() = playing != null || vodPlaying != null
 
-  init { load() }
+  init { if (config != null) load() }
+
+  // ---- Account setup ----
+
+  /** Log in with the typed details. Returns the logged-in client (to reuse on save) or throws with the reason. */
+  suspend fun testConfig(c: PortalConfig): Portal {
+    val p = Portal(c, knownEndpoint = if (c.sameAccount(config)) store.endpoint else null)
+    val genres = p.genres() // logs in (handshake + profile) and proves the account works
+    if (genres.isEmpty()) throw java.io.IOException("Logged in, but the portal returned no channel categories")
+    return p
+  }
+
+  /** Save tested details. A different portal or MAC is a different account: start from a clean slate. */
+  fun applyConfig(c: PortalConfig, tested: Portal) {
+    val newAccount = !c.sameAccount(config)
+    store.saveConfig(c)
+    if (newAccount) {
+      store.clearAccountData()
+      favs = emptySet(); vodList = emptyList(); recent = emptyList(); progress = emptyMap()
+      channels = emptyList(); genres = emptyList(); byGenre = emptyList(); byId = emptyMap()
+      vodCats = emptyList(); vodCat = null; liveGenre = null
+      focusedChannel = null; focusedVod = null
+      epgCache.clear(); pageCache.clear(); seasonCache.clear(); episodeCache.clear()
+      status = "Loading channels…"
+    }
+    portal = tested
+    config = c
+    tab = Tab.Home
+    focusKey = null
+    if (newAccount || channels.isEmpty()) load()
+  }
 
   fun load() = viewModelScope.launch {
     // Show the cached list instantly; refresh from the portal when it's older than 6 h (or missing).

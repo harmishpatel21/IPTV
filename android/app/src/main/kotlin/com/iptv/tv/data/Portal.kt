@@ -3,7 +3,6 @@ package com.iptv.tv.data
 import android.util.JsonReader
 import android.util.Log
 import android.util.JsonToken
-import com.iptv.tv.BuildConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -31,18 +30,20 @@ const val MAG_USER_AGENT =
  * Auth is by MAC + STB identity; tokens expire silently, so every call re-handshakes and retries once.
  */
 class Portal(
-  private val portalUrl: String = BuildConfig.PORTAL,
-  private val mac: String = BuildConfig.MAC.uppercase(),
-  private val timezone: String = BuildConfig.TIMEZONE,
-  private val model: String = BuildConfig.STB_MODEL,
-  private val serial: String = BuildConfig.SERIAL,
-  private val deviceId: String = BuildConfig.DEVICE_ID,
-  private val deviceId2: String = BuildConfig.DEVICE_ID2.ifEmpty { BuildConfig.DEVICE_ID },
-  private val signature: String = BuildConfig.SIGNATURE,
+  cfg: PortalConfig,
   /** API address that worked last time (saved by the app), so we don't probe candidates on every start. */
   knownEndpoint: String? = null,
   private val onEndpoint: (String) -> Unit = {},
 ) {
+  private val portalUrl = cfg.portal
+  private val mac = cfg.mac
+  private val timezone = cfg.timezone
+  private val model = cfg.model
+  private val serial = cfg.serial
+  private val deviceId = cfg.deviceId
+  private val deviceId2 = cfg.deviceId2.ifEmpty { cfg.deviceId }
+  private val signature = cfg.signature
+
   val http: OkHttpClient = OkHttpClient.Builder()
     .connectTimeout(15, TimeUnit.SECONDS)
     .readTimeout(90, TimeUnit.SECONDS)

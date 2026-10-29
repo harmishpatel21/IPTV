@@ -5,14 +5,19 @@ plugins {
   alias(libs.plugins.compose.compiler)
 }
 
-// Portal credentials come from the web player's config.json (gitignored), so both apps share one config.
+// Debug builds pick up the web player's config.json (gitignored) so your own TV needs no setup.
+// Release builds never contain an account: the app asks for it on first launch, so one APK can be shared.
 @Suppress("UNCHECKED_CAST")
 val portalConfig: Map<String, Any?> = rootProject.file("../config.json").let { f ->
   if (f.exists()) JsonSlurper().parse(f) as Map<String, Any?> else emptyMap()
 }
 
-fun cfg(key: String, default: String = "") =
-  "\"" + (portalConfig[key] ?: default).toString().replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+fun cfg(key: String) = "\"" + (portalConfig[key] ?: "").toString().replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
+val portalFields = mapOf(
+  "PORTAL" to "portal", "MAC" to "mac", "TIMEZONE" to "timezone", "STB_MODEL" to "stbModel", "SERIAL" to "serialNumber",
+  "DEVICE_ID" to "deviceId", "DEVICE_ID2" to "deviceId2", "SIGNATURE" to "signature",
+)
 
 android {
   namespace = "com.iptv.tv"
@@ -21,22 +26,30 @@ android {
     applicationId = "com.iptv.tv"
     minSdk = 24
     targetSdk = 36
-    versionCode = 1
-    versionName = "0.1"
-    buildConfigField("String", "PORTAL", cfg("portal"))
-    buildConfigField("String", "MAC", cfg("mac"))
-    buildConfigField("String", "TIMEZONE", cfg("timezone", "Europe/London"))
-    buildConfigField("String", "STB_MODEL", cfg("stbModel", "MAG250"))
-    buildConfigField("String", "SERIAL", cfg("serialNumber"))
-    buildConfigField("String", "DEVICE_ID", cfg("deviceId"))
-    buildConfigField("String", "DEVICE_ID2", cfg("deviceId2"))
-    buildConfigField("String", "SIGNATURE", cfg("signature"))
+    versionCode = 2
+    versionName = "0.2"
+  }
+
+  // Release signing: a real keystore from env vars (CI secrets) when provided, else the local debug key.
+  // Android only installs an update signed with the same key, so published releases should use the real one.
+  val releaseKeystore = System.getenv("RELEASE_KEYSTORE")?.let { file(it) }?.takeIf { it.exists() }
+  signingConfigs {
+    if (releaseKeystore != null) create("release") {
+      storeFile = releaseKeystore
+      storePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD")
+      keyAlias = System.getenv("RELEASE_KEY_ALIAS")
+      keyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+    }
   }
 
   buildTypes {
+    debug {
+      portalFields.forEach { (field, key) -> buildConfigField("String", field, cfg(key)) }
+    }
     release {
+      portalFields.keys.forEach { field -> buildConfigField("String", field, "\"\"") }
       isMinifyEnabled = false
-      proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+      signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
     }
   }
   compileOptions {

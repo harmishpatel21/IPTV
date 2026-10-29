@@ -29,6 +29,14 @@ fun App(vm: AppViewModel = viewModel()) {
   val detail = vm.detail
 
   MaterialTheme(colorScheme = darkColorScheme(primary = Accent, background = Bg, surface = Bg)) {
+    // No account yet (shareable build, first launch): setup is the whole app until it succeeds.
+    if (vm.config == null) {
+      Box(Modifier.fillMaxSize().background(Bg)) { SettingsScreen(vm, restore, firstRun = true) }
+      LaunchedEffect(Unit) {
+        repeat(15) { delay(100); if (runCatching { restore.requestFocus() }.isSuccess) return@LaunchedEffect }
+      }
+      return@MaterialTheme
+    }
     Box(Modifier.fillMaxSize().background(Bg)) {
       // Browse UI stays composed under overlays, so scroll position and focus survive.
       Column(Modifier.fillMaxSize()) {
@@ -39,6 +47,7 @@ fun App(vm: AppViewModel = viewModel()) {
           Tab.Live -> LiveScreen(vm, restore)
           Tab.Movies -> MoviesScreen(vm, restore)
           Tab.MyList -> MyListScreen(vm, restore)
+          Tab.Settings -> SettingsScreen(vm, restore, firstRun = false)
         }
       }
       vm.status?.let {

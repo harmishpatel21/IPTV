@@ -79,7 +79,8 @@ fun TopNav(vm: AppViewModel) {
   ) {
     Text("IPTV", color = Accent, fontSize = 20.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(end = 18.dp))
     Tab.entries.forEach { t ->
-      Pill(if (t == Tab.Search) "⌕  Search" else t.label, vm.tab == t) {
+      val label = when (t) { Tab.Search -> "⌕  Search"; Tab.Settings -> "⚙"; else -> t.label }
+      Pill(label, vm.tab == t) {
         if (vm.tab != t) { vm.tab = t; vm.vodCat = null; vm.focusKey = null }
       }
     }

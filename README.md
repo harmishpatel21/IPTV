@@ -8,7 +8,7 @@ It's only a player: bring your own subscription (portal URL + MAC address).
 
 | | |
 |---|---|
-| **Android TV app** (`android/`) | Native Kotlin app (Compose for TV + ExoPlayer) for Android TV / Google TV. **[Install guide → DEPLOY.md](DEPLOY.md)** |
+| **Android TV app** (`android/`) | Native Kotlin app (Compose for TV + ExoPlayer) for Android TV / Google TV. Install the APK, then enter your portal details on the TV. **[Install guide → DEPLOY.md](DEPLOY.md)** |
 | **Web player** (`server.js`, `public/`) | Small Node server + browser UI. Handy for checking your portal details and for watching on a computer. |
 
 ## Features
@@ -39,12 +39,14 @@ It's only a player: bring your own subscription (portal URL + MAC address).
 
 ## Android TV app
 
-See **[DEPLOY.md](DEPLOY.md)** for building it with your own portal details and installing it on a TV.
+**[Download the latest APK](https://github.com/harmishpatel21/IPTV/releases/latest/download/IPTV-tv.apk)**
+(or [build it](DEPLOY.md#c-build-it-yourself)), install it on the TV, and enter your portal URL and MAC on the
+setup screen. **[DEPLOY.md](DEPLOY.md)** has step-by-step instructions, including installing without a computer.
 
 ## Notes
 
-- `config.json` holds your account details and is git-ignored; the TV app reads it at build time, so never
-  share a built APK.
+- `config.json` holds your account details and is git-ignored. The web player uses it; the TV app only bakes
+  it into **debug** builds (never share those). Release APKs contain no account; you enter it on the TV.
 - Many providers allow one active device per account — the web player, the TV app and STBEmu may log each
   other out.
 - Use it only with a subscription you're entitled to.

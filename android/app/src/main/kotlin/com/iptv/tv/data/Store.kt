@@ -32,6 +32,31 @@ class Store(context: Context) {
   fun favs(): Set<String> = prefs.getStringSet("favs", emptySet())!!.toSet()
   fun saveFavs(favs: Set<String>) = prefs.edit().putStringSet("favs", favs).apply()
 
+  /** Saved account, else the one built in (own debug builds), else null → the app shows setup. */
+  fun config(): PortalConfig? {
+    val saved = prefs.getString("config", null)?.let { s ->
+      runCatching {
+        val o = JSONObject(s)
+        PortalConfig(o.getString("portal"), o.getString("mac"), o.optString("timezone"), o.optString("model"),
+          o.optString("serial"), o.optString("deviceId"), o.optString("deviceId2"), o.optString("signature")).normalized()
+      }.getOrNull()
+    }
+    if (saved != null) return saved.takeIf { it.isComplete }
+    // First run of a build with details baked in: keep them, so a later release build (which has none) still works.
+    return PortalConfig.fromBuild().normalized().takeIf { it.isComplete }?.also { saveConfig(it) }
+  }
+
+  fun saveConfig(c: PortalConfig) = prefs.edit().putString("config", JSONObject()
+    .put("portal", c.portal).put("mac", c.mac).put("timezone", c.timezone).put("model", c.model)
+    .put("serial", c.serial).put("deviceId", c.deviceId).put("deviceId2", c.deviceId2).put("signature", c.signature)
+    .toString()).apply()
+
+  /** Switching to another portal/MAC: channels, lists and history belong to the old account. */
+  fun clearAccountData() {
+    channelFile.delete()
+    prefs.edit().remove("endpoint").remove("favs").remove("vodList").remove("recent").remove("vodProgress").apply()
+  }
+
   var endpoint: String?
     get() = prefs.getString("endpoint", null)
     set(v) = prefs.edit().putString("endpoint", v).apply()

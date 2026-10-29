@@ -1,161 +1,131 @@
-# Installing the Android TV app on your TV
+# Installing the Android TV app
 
-This guide takes you from a fresh clone of this repo to the app running on an Android TV / Google TV
-(Sony Bravia, TCL, Hisense, Chromecast with Google TV, Nvidia Shield, …). It takes about 30–45 minutes the
-first time, mostly downloads.
+Get the app onto an Android TV / Google TV (Sony Bravia, TCL, Hisense, Chromecast with Google TV,
+Nvidia Shield, …), then sign in with your own IPTV details on the TV.
 
 > **You need your own IPTV subscription** that uses a **Stalker / Ministra portal** (the kind you'd normally
-> use with STBEmu or a MAG box). This project is only a player — it has no content of its own.
+> use with STBEmu or a MAG box): a **portal URL** and a **MAC address** registered with your provider.
+> This project is only a player; it has no content of its own.
 
-**Why build it yourself?** Your portal login is built into the APK when you compile it, so there's no
-ready-made download: everyone builds their own copy with their own details. Don't share your APK — it contains
-your account.
+There are three ways to install it. **Most people want option A.**
 
----
-
-## What you need
-
-| | |
-|---|---|
-| A TV | Android TV / Google TV, Android 7.0 or newer |
-| A computer | Windows, macOS or Linux, on the **same Wi-Fi/network** as the TV |
-| Portal details | Portal URL and MAC address (see step 1) |
-| Disk space | ~3 GB for the build tools |
-
----
-
-## 1. Collect your portal details
-
-Your provider gave you a **portal URL** and registered a **MAC address** for you. If you already use STBEmu,
-everything is in its settings: **Settings → Profiles → *your profile***:
-
-| Setting in STBEmu | Goes into `config.json` as | Required? |
+| | Option | You need |
 |---|---|---|
-| Portal URL (e.g. `http://example.com:8080/c/`) | `portal` | yes |
-| MAC address (e.g. `00:1A:79:12:34:56`) | `mac` | yes |
-| STB Configuration → **STB model** (e.g. `MAG250`, `MAG424`) | `stbModel` | if not MAG250 |
-| STB Configuration → **Serial number** | `serialNumber` | often |
-| STB Configuration → **Device ID / Device ID 2 / Signature** | `deviceId`, `deviceId2`, `signature` | only if set (not greyed out) |
+| **A** | [Download the APK on the TV](#a-download-on-the-tv-no-computer) | Just the TV |
+| **B** | [Install the APK from a computer](#b-install-from-a-computer-adb) | A computer on the same network |
+| **C** | [Build it yourself](#c-build-it-yourself) | A computer + ~3 GB of build tools |
 
-Many portals tie your account to the exact box identity STBEmu uses. If you later see
-**"device_id mismatch"**, copy the model and serial number from STBEmu — that's usually all it takes.
+After installing, open the app and [enter your portal details](#first-launch-enter-your-portal-details).
 
-## 2. Install the build tools
+---
 
-You need **JDK 17** and the **Android SDK**. Pick one of the two routes.
+## A. Download on the TV (no computer)
 
-### Route A — Android Studio (easiest, ~4 GB)
+1. On the TV, install **Downloader** by AFTVnews from the Google Play Store.
+2. Allow it to install apps: Settings → **Apps → Security & restrictions → Unknown sources** (or
+   *Install unknown apps*), then turn on **Downloader**. The wording varies slightly between TVs.
+3. Open Downloader and enter this address:
 
-1. Install [Android Studio](https://developer.android.com/studio). It includes a JDK and the SDK.
-2. Open it once and finish the setup wizard (it downloads the SDK).
-3. Skip to step 3. (You can build from Android Studio by opening the `android/` folder, or follow the
-   command-line steps below — both work.)
-
-### Route B — command-line tools only (~1 GB)
-
-**JDK 17**
-
-| OS | Command |
-|---|---|
-| Windows | `winget install Microsoft.OpenJDK.17` |
-| macOS | `brew install --cask temurin@17` |
-| Ubuntu/Debian | `sudo apt install openjdk-17-jdk` |
-
-**Android SDK command-line tools**
-
-1. Download *Command line tools only* for your OS from
-   [developer.android.com/studio](https://developer.android.com/studio#command-line-tools-only).
-2. Unzip it so the path is `<SDK>/cmdline-tools/latest/bin/` — for example:
-   - Windows: `%LOCALAPPDATA%\Android\Sdk\cmdline-tools\latest\`
-   - macOS: `~/Library/Android/sdk/cmdline-tools/latest/`
-   - Linux: `~/Android/Sdk/cmdline-tools/latest/`
-3. Set environment variables (then open a new terminal):
-   - `ANDROID_HOME` = your `<SDK>` folder
-   - `JAVA_HOME` = your JDK 17 folder (Windows example: `C:\Program Files\Microsoft\jdk-17.x.x-hotspot`)
-   - add `<SDK>/platform-tools` to `PATH` (this is where `adb` lives)
-4. Accept the SDK licences and install `adb`:
-
-   ```sh
-   sdkmanager --licenses          # answer y to each
-   sdkmanager "platform-tools"
+   ```
+   https://github.com/harmishpatel21/IPTV/releases/latest/download/IPTV-tv.apk
    ```
 
-   (On Windows the tool is `sdkmanager.bat`. Newer SDK versions print a deprecation warning — it still works.)
-   The build downloads the remaining SDK pieces it needs by itself.
+4. When the download finishes, choose **Install**, then **Open**.
 
-## 3. Get the code and add your details
+The app also appears as **IPTV** in the TV's **Apps** list. Long-press it to add it to your home screen.
 
-```sh
-git clone <this repo's URL>
-cd <repo folder>
-cp config.example.json config.json      # Windows: copy config.example.json config.json
-```
+## B. Install from a computer (adb)
 
-Edit **`config.json`** (in the repo root, *not* inside `android/`):
+Use this if your TV has no Downloader app, or you built the APK yourself.
 
-```json
-{
-  "portal": "http://your-provider.example:8080/c/",
-  "mac": "00:1A:79:12:34:56",
-  "timezone": "America/Toronto",
-  "stbModel": "MAG250",
-  "serialNumber": "",
-  "deviceId": "",
-  "deviceId2": "",
-  "signature": ""
-}
-```
+1. **Get the APK.** Download `IPTV-tv.apk` from this repo's
+   [Releases page](https://github.com/harmishpatel21/IPTV/releases/latest), or build it (option C).
+2. **Install adb.** It's in Google's
+   [SDK Platform Tools](https://developer.android.com/tools/releases/platform-tools). Unzip it anywhere.
+3. **Turn on developer options on the TV.** Settings → **System → About** (on some TVs **Device Preferences
+   → About**). Scroll to **Build** and press OK on it **7 times** until it says *"You are now a developer"*.
+4. **Turn on debugging.** Settings → **System → Developer options** → enable **USB debugging**, and
+   **Network debugging** / **ADB debugging** if you see it.
+5. **Find the TV's IP address.** Settings → **Network & Internet** → your network (e.g. `192.168.1.45`).
+6. From the computer (same network as the TV):
 
-- `timezone` — your [tz name](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones), used for the TV guide.
-- Leave fields empty if STBEmu doesn't show them. `port` is only used by the web player and can be left as is.
-- `config.json` is git-ignored, so it never gets committed.
+   ```sh
+   adb connect 192.168.1.45:5555        # your TV's IP
+   adb install -r IPTV-tv.apk
+   ```
 
-**Optional: check your details on the computer first.** If you have [Node.js](https://nodejs.org) 18+, run
-`npm start` in the repo folder and open <http://127.0.0.1:3000>. If channels load there, the TV app will log in
-too. Stop it (Ctrl+C) before using the TV — many providers allow only one device at a time.
+   - The first time, the TV asks **"Allow USB debugging?"**. Tick **Always allow from this computer**, press
+     **OK**, then run `adb connect` again. `adb devices` should list the TV as `device`, not `unauthorized`.
+   - **Only "Wireless debugging" (Android 11+)?** Open it on the TV, choose **Pair device with pairing code**,
+     run `adb pair <ip>:<pairing port>` and enter the code, then `adb connect <ip>:<port on the main screen>`.
 
-## 4. Build the app
+You can turn developer options off again afterwards. The app stays installed.
 
-```sh
-cd android
-./gradlew assembleDebug        # Windows: gradlew.bat assembleDebug
-```
+## C. Build it yourself
 
-The first build downloads Gradle and libraries and takes 5–10 minutes; later builds take under a minute.
-The result is:
+### 1. Install the build tools (JDK 17 + Android SDK)
 
-```
-android/app/build/outputs/apk/debug/app-debug.apk
-```
+**Easiest:** install [Android Studio](https://developer.android.com/studio) and finish its setup wizard. It
+includes everything.
 
-## 5. Prepare the TV (one time)
+**Or command-line only (~1 GB):**
 
-1. **Turn on developer options.** Settings → **System → About** (on some TVs **Device Preferences → About**).
-   Scroll to **Build** (or *Android TV OS build*) and press OK on it **7 times** until it says
-   *"You are now a developer"*.
-2. **Turn on debugging.** Go back to Settings → **System → Developer options** and enable
-   **USB debugging**. If you also see **Network debugging** / **ADB debugging**, enable that too.
-3. **Find the TV's IP address.** Settings → **Network & Internet** → your Wi-Fi network (e.g. `192.168.1.45`).
+| | Windows | macOS | Ubuntu / Debian |
+|---|---|---|---|
+| JDK 17 | `winget install Microsoft.OpenJDK.17` | `brew install --cask temurin@17` | `sudo apt install openjdk-17-jdk` |
 
-## 6. Install on the TV
-
-From the computer (same network as the TV):
+Then download *Command line tools only* from
+[developer.android.com/studio](https://developer.android.com/studio#command-line-tools-only) and unzip it so
+the path is `<SDK>/cmdline-tools/latest/bin/`. Set `ANDROID_HOME=<SDK>` and `JAVA_HOME=<your JDK 17>`,
+add `<SDK>/platform-tools` to `PATH`, open a new terminal and run:
 
 ```sh
-adb connect 192.168.1.45:5555                                   # your TV's IP
-adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+sdkmanager --licenses          # answer y to each  (Windows: sdkmanager.bat)
+sdkmanager "platform-tools"
 ```
 
-- The first time, the TV shows **"Allow USB debugging?"** — tick **Always allow from this computer** and press
-  **OK**, then run `adb connect` again. `adb devices` should list the TV as `device` (not `unauthorized`).
-- **Android 11+ "Wireless debugging" instead of port 5555?** Some TVs only offer *Wireless debugging* with a
-  pairing code. Open it on the TV, choose **Pair device with pairing code**, then on the computer run
-  `adb pair <ip>:<pairing port>` (enter the code), followed by `adb connect <ip>:<port shown on the main screen>`.
+The build downloads the rest of the SDK by itself.
 
-The app appears as **IPTV** in the TV's **Apps** list. Long-press it to add it to your favourites/home screen.
-You can turn developer options off again afterwards if you like; the app stays installed.
+### 2. Build
 
-## 7. Using it
+```sh
+git clone https://github.com/harmishpatel21/IPTV.git
+cd IPTV/android
+./gradlew assembleRelease      # Windows: gradlew.bat assembleRelease
+```
+
+The first build takes 5–10 minutes. Result: `android/app/build/outputs/apk/release/app-release.apk`.
+It contains no account details, so it's safe to share. Install it with option B.
+
+**Optional: build your details in.** A **debug** build (`./gradlew assembleDebug`) reads `config.json` from
+the repo root (copy `config.example.json`; it's git-ignored), so your own TV skips the setup screen. The
+details then sit inside that APK, so **don't share a debug build**. The result is
+`android/app/build/outputs/apk/debug/app-debug.apk`.
+
+---
+
+## First launch: enter your portal details
+
+The first time it opens, the app asks for your account. Use the arrows to move and **OK** on a field to
+open the keyboard. Hold the 🎤 button on the remote to dictate instead of typing.
+
+| Field | Where to find it | Required? |
+|---|---|---|
+| **Portal URL** | From your provider, e.g. `http://example.com:8080/c/` (`http://` is added if you leave it out) | yes |
+| **MAC address** | From your provider, e.g. `00:1A:79:12:34:56` (colons optional) | yes |
+| **STB model** | Pick with the arrows (default MAG250) | if your provider expects another |
+| **Serial number** | Often needed: see below | sometimes |
+| **Device ID / Device ID 2 / Signature** | Only if STBEmu shows values for them | rarely |
+| **Time zone** | Filled in automatically; used for the TV guide | no |
+
+Press **Test & Save**. The app logs in to check the details, then opens your channels. You can change them
+any time under the **⚙** tab.
+
+**Coming from STBEmu?** Copy what it uses, from **Settings → Profiles → your profile**: the portal URL and MAC,
+plus, under **STB Configuration**, the **STB model** and **Serial number** (and the Device IDs if they aren't
+greyed out). Many portals only accept the exact box identity your account was activated with.
+
+## Using it
 
 | Where | Button | Does |
 |---|---|---|
@@ -166,31 +136,62 @@ You can turn developer options off again afterwards if you like; the app stays i
 | Movie / episode player | ◀ ▶ | Back / forward 10 s (hold for 30 s) |
 | Movie / episode player | OK or ⏯ | Pause / play |
 | Movie / episode player | CH+ or ⏭ | Next episode |
-| Search | OK on the box | Opens the keyboard — hold the 🎤 button to speak |
+| Search | OK on the box | Opens the keyboard (or hold 🎤 to speak) |
 | Any player | Back | Exit (your position is saved) |
 
 ## Updating
 
-```sh
-git pull
-cd android && ./gradlew assembleDebug
-adb connect <tv-ip>:5555 && adb install -r app/build/outputs/apk/debug/app-debug.apk
-```
+Install the new APK the same way (Downloader, or `adb install -r IPTV-tv.apk`). Your details, My List,
+Continue Watching and resume positions are kept.
 
-`install -r` keeps your My List, Continue Watching and resume positions. If you change `config.json`, rebuild
-and reinstall — the details are built into the APK.
+If the install fails with *"App not installed"* or *signatures don't match*, the new APK was signed with a
+different key (e.g. you switched between your own build and a downloaded one). Uninstall the app first
+(this clears its data), then install again.
 
 ## Troubleshooting
 
 | Problem | Fix |
 |---|---|
-| *"Portal rejected this device: device_id mismatch"* | Copy `stbModel` and `serialNumber` (and Device IDs if not greyed out) from STBEmu into `config.json`, rebuild, reinstall. |
-| *"The portal is busy (too many requests)"* / HTTP 429 | Your provider rate-limits logins. Wait a minute or two and try again. |
-| Works for a while, then streams stop | Your provider may allow one device at a time — close STBEmu or the web player. |
-| `adb devices` shows `unauthorized` | Accept the prompt on the TV (step 6). If it never appeared: Developer options → *Revoke USB debugging authorizations*, then `adb connect` again. |
-| `adb connect` fails / times out | Check the IP, that debugging is on, and that the computer and TV are on the same network. Try the *Wireless debugging* pairing method. |
-| Build fails: *SDK location not found* | Set `ANDROID_HOME`, or create `android/local.properties` with `sdk.dir=/path/to/Sdk` (Windows: `sdk.dir=C\:\\Users\\you\\AppData\\Local\\Android\\Sdk`). |
-| Build fails: *Unsupported class file major version* / Java errors | `JAVA_HOME` must point to **JDK 17**. |
-| Build fails: *licences not accepted* | Run `sdkmanager --licenses`. |
-| App opens but says *Could not load channels* | Your details are wrong or the portal is down. Test them with the web player (`npm start`). |
-| App isn't on the home screen | Open the TV's **Apps** list; it's there as **IPTV**. |
+| *"Portal rejected this device: device_id mismatch"* | Set the **STB model** and **Serial number** (and Device IDs if STBEmu shows them) to match STBEmu. |
+| *"Could not log in to the portal…"* | Check the portal URL and MAC. Your provider may also need your MAC activated first. |
+| *"The portal is busy (too many requests)"* | Your provider rate-limits logins. Wait a minute or two, then try again. |
+| Streams stop after a while / *"…another device"* | Many providers allow one device at a time. Close STBEmu or any other player on the same account. |
+| Downloader says it can't install | Allow **Unknown sources / Install unknown apps** for Downloader (option A, step 2). |
+| `adb devices` shows `unauthorized` | Accept the prompt on the TV. If it never appeared: Developer options → *Revoke USB debugging authorizations*, then `adb connect` again. |
+| `adb connect` fails / times out | Check the IP, that debugging is on, and that both are on the same network. Try the *Wireless debugging* pairing method. |
+| Build: *SDK location not found* | Set `ANDROID_HOME`, or create `android/local.properties` with `sdk.dir=/path/to/Sdk` (Windows: `sdk.dir=C\:\\Users\\you\\AppData\\Local\\Android\\Sdk`). |
+| Build: *Unsupported class file major version* | `JAVA_HOME` must point to **JDK 17**. |
+| Build: *licences not accepted* | Run `sdkmanager --licenses`. |
+
+---
+
+## For maintainers: publishing releases
+
+The **Android APK** workflow (`.github/workflows/android.yml`) builds the shareable release APK on every push
+that touches `android/`, and uploads it as a workflow artifact. To publish a downloadable release:
+
+```sh
+git tag v0.2 && git push origin v0.2
+```
+
+The APK is attached to a GitHub Release as `IPTV-tv.apk`, so the
+`…/releases/latest/download/IPTV-tv.apk` link in option A always points to the newest version.
+
+**Use a fixed signing key**, or users can't install updates over an older version. Create one once and keep it
+safe (losing it means users must uninstall to update):
+
+```sh
+keytool -genkeypair -v -keystore iptv-release.keystore -alias iptv -keyalg RSA -keysize 4096 -validity 10000
+```
+
+Then add these **repository secrets** (Settings → Secrets and variables → Actions):
+
+| Secret | Value |
+|---|---|
+| `RELEASE_KEYSTORE_BASE64` | the keystore file as base64 (`base64 -w0 iptv-release.keystore`; PowerShell: `[Convert]::ToBase64String([IO.File]::ReadAllBytes("iptv-release.keystore"))`) |
+| `RELEASE_KEYSTORE_PASSWORD` | keystore password |
+| `RELEASE_KEY_ALIAS` | `iptv` (or the alias you chose) |
+| `RELEASE_KEY_PASSWORD` | key password |
+
+Without them the workflow still builds, but signs with a throwaway key. Fine for testing, but each release
+then needs an uninstall to update.

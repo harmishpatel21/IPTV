@@ -59,7 +59,7 @@ We are building our own client: nicer channel browsing, fast search, favourites,
 ## Android TV app (`android/`)
 - Kotlin + Compose for TV (tv-material 1.1) + Media3 ExoPlayer (HLS) + OkHttp; AGP 9.5 / Gradle 9.8.2; compileSdk 37,
   targetSdk 36, minSdk 24. Package `com.iptv.tv`. Portal credentials are read at build time from **../config.json**
-  into BuildConfig (no secrets in git).
+  into BuildConfig for debug builds only (no secrets in git).
 - `data/Portal.kt` (port of server.js; stream-parses the 12 MB channel list with JsonReader), `data/Store.kt`
   (SharedPreferences favs/recent + compact channel cache ~0.8 MB in filesDir, refreshed when >6 h old),
   `ui/AppViewModel.kt`, `ui/Screens.kt` (TopNav, Home w/ focus-driven hero + rows, Live TV genres+grid, My List),
@@ -75,6 +75,14 @@ We are building our own client: nicer channel browsing, fast search, favourites,
   chips → poster rows → category grid w/ sort + paging), details overlay (`ui/VodScreens.kt`: Play/Resume, seasons,
   episodes w/ progress), `ui/VodPlayer.kt` (◀▶ 10 s / hold 30 s, OK pause, CH+/⏭ next episode, auto-next, saves
   position every 5 s), mixed Continue Watching, My List for channels + titles (Coil posters).
+- Account setup in-app (v0.2): `data/PortalConfig.kt` + `ui/Settings.kt` (first-run setup screen and the ⚙ tab;
+  "Test & Save" logs in before saving; changing portal/MAC clears account data). Only **debug** builds bake
+  ../config.json into BuildConfig (saved to prefs on first run); **release** builds are account-free and shareable
+  (verified by grepping the APK). Release signing uses RELEASE_KEYSTORE* env vars if set, else the debug key.
+  `.github/workflows/android.yml` builds the release APK; tags `v*` attach `IPTV-tv.apk` to a GitHub Release.
+- Testing on the user's TV: the user watches it too — back up `shared_prefs/iptv.xml` via `run-as` (debug build)
+  before anything destructive (`pm clear`), restore with `run-as … sh -c 'cat > …'`, and pause if a non-adb
+  key press (uid 0) shows up in logcat.
 - Portal login on TV: remembers the working endpoint in prefs, backs off on HTTP 429 instead of re-logging in
   (repeated restarts during testing triggered the portal's rate limit).
 

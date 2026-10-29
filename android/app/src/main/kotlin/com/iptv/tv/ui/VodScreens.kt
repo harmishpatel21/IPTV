@@ -235,6 +235,8 @@ private fun SearchBox(vm: AppViewModel, restore: FocusRequester, onSubmit: () ->
   var editing by remember { mutableStateOf(false) }
   var wasEditing by remember { mutableStateOf(false) }
   val field = remember { FocusRequester() }
+  val box = remember { FocusRequester() }
+  var boxFocused by remember { mutableStateOf(false) }
   val keyboard = LocalSoftwareKeyboardController.current
   val shape = RoundedCornerShape(8.dp)
   val placeholder = "Search channels, movies and shows — press OK to type"
@@ -267,7 +269,7 @@ private fun SearchBox(vm: AppViewModel, restore: FocusRequester, onSubmit: () ->
     } else {
       Surface(
         onClick = { editing = true },
-        modifier = Modifier.fillMaxWidth().restorable(vm, "search:field", restore),
+        modifier = Modifier.fillMaxWidth().restorable(vm, "search:field", restore).focusRequester(box).onFocusChanged { boxFocused = it.isFocused },
         shape = ClickableSurfaceDefaults.shape(shape),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
         colors = ClickableSurfaceDefaults.colors(
@@ -286,7 +288,11 @@ private fun SearchBox(vm: AppViewModel, restore: FocusRequester, onSubmit: () ->
         }
       }
       // After typing, put focus back on the box (the text field that had it is gone).
-      LaunchedEffect(Unit) { if (wasEditing) runCatching { restore.requestFocus() } }
+      LaunchedEffect(Unit) {
+        if (!wasEditing) return@LaunchedEffect
+        // The keyboard is still closing: keep asking until focus actually lands here.
+        repeat(20) { if (boxFocused) return@LaunchedEffect; runCatching { box.requestFocus() }; delay(50) }
+      }
     }
   }
 }
@@ -401,7 +407,7 @@ private fun playAction(
 }
 
 @Composable
-private fun BigButton(text: String, primary: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+fun BigButton(text: String, primary: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
   Surface(
     onClick = onClick,
     modifier = modifier,
