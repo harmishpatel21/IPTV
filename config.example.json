@@ -1,0 +1,11 @@
+{
+  "portal": "http://your-provider.example:8080/c/",
+  "mac": "00:1A:79:00:00:00",
+  "timezone": "America/Toronto",
+  "port": 3000,
+  "stbModel": "MAG250",
+  "serialNumber": "",
+  "deviceId": "",
+  "deviceId2": "",
+  "signature": ""
+}

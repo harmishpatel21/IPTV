@@ -1,0 +1,12 @@
+{
+  "name": "iptv",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Prototype IPTV client for Stalker/MAG portals",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

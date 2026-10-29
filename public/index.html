@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IPTV</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800;900&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav id="topbar">
+    <a class="brand" href="#" data-view="home">IPTV</a>
+    <div class="links">
+      <a href="#" data-view="home">Home</a>
+      <a href="#" data-view="browse">Live TV</a>
+      <a href="#" data-view="vod">Movies &amp; Shows</a>
+      <a href="#" data-view="mylist">My List</a>
+    </div>
+    <label class="search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+      <input id="search" type="search" placeholder="Channels, movies, shows  ( / )" autocomplete="off">
+    </label>
+  </nav>
+
+  <div id="status"></div>
+
+  <main id="home" class="view">
+    <section id="hero"></section>
+    <div id="rows"></div>
+  </main>
+
+  <main id="browse" class="view" hidden>
+    <h2 id="browse-title" class="page-title"></h2>
+    <div id="chips" class="chips"></div>
+    <div id="grid" class="grid"></div>
+    <div id="sentinel"></div>
+    <section id="mylist-vod" hidden>
+      <h3 class="section-title">Movies &amp; Shows</h3>
+      <div id="mylist-vod-grid" class="grid posters"></div>
+    </section>
+  </main>
+
+  <main id="vod" class="view" hidden>
+    <h2 class="page-title">Movies &amp; Shows</h2>
+    <div id="vod-groups" class="chips"></div>
+    <div id="vod-rows"></div>
+  </main>
+
+  <main id="vodcat" class="view" hidden>
+    <h2 id="vodcat-title" class="page-title"></h2>
+    <div id="vodcat-sort" class="chips"></div>
+    <div id="vodcat-grid" class="grid posters"></div>
+    <div id="vodcat-sentinel" class="sentinel"></div>
+  </main>
+
+  <main id="results" class="view" hidden>
+    <h2 id="results-title" class="page-title"></h2>
+    <div id="results-channels"></div>
+    <h3 id="results-vod-title" class="section-title">Movies &amp; Shows</h3>
+    <div id="results-grid" class="grid posters"></div>
+    <div id="results-sentinel" class="sentinel"></div>
+  </main>
+
+  <div id="detail" hidden>
+    <div class="detail-panel" role="dialog" aria-modal="true">
+      <button id="detail-close" class="icon-btn big" title="Close (Esc)">✕</button>
+      <div id="detail-body"></div>
+    </div>
+  </div>
+
+  <div id="player" hidden>
+    <video id="video" autoplay></video>
+    <div id="osd">
+      <button id="back" title="Back (Esc)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+      </button>
+      <div class="osd-bottom">
+        <div id="osd-live"><span class="dot"></span>LIVE</div>
+        <div id="osd-name"></div>
+        <div id="osd-now"></div>
+        <div id="osd-progress" class="progress"><i id="osd-bar"></i></div>
+        <div class="osd-row"><span id="osd-next"></span><span id="osd-time"></span></div>
+        <div id="osd-hint" class="osd-hint"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3/dist/mpegts.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
