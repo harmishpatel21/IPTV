@@ -5,6 +5,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -37,6 +39,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -46,17 +49,24 @@ import androidx.tv.material3.Border
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
+import coil3.compose.AsyncImage
 import com.iptv.tv.data.Channel
 import com.iptv.tv.data.NowNext
+import com.iptv.tv.data.VodItem
 import com.iptv.tv.data.nowNext
 import kotlinx.coroutines.delay
 import java.text.DateFormat
 import java.util.Date
 
 const val ROW_SIZE = 40
-private val Gutter = 40.dp
+val Gutter = 40.dp
+val HeroHeight = 190.dp
 
-private fun hhmm(ms: Long): String = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(ms))
+fun hhmm(ms: Long): String = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(ms))
+
+/** Attach the shared restore-focus requester to the element whose key matches, and remember focus moves. */
+fun Modifier.restorable(vm: AppViewModel, key: String, restore: FocusRequester): Modifier =
+  (if (vm.focusKey == key) focusRequester(restore) else this).onFocusChanged { if (it.isFocused) vm.focusKey = key }
 
 // ---------- Top navigation ----------
 
@@ -69,91 +79,160 @@ fun TopNav(vm: AppViewModel) {
   ) {
     Text("IPTV", color = Accent, fontSize = 20.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(end = 18.dp))
     Tab.entries.forEach { t ->
-      val selected = vm.tab == t
-      Surface(
-        onClick = { if (vm.tab != t) { vm.tab = t; vm.focusKey = null } },
-        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(50)),
-        colors = ClickableSurfaceDefaults.colors(
-          containerColor = Color.Transparent, focusedContainerColor = Color.White,
-          contentColor = if (selected) Color.White else Muted, focusedContentColor = Color.Black,
-        ),
-        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.05f),
-      ) {
-        Text(t.label, fontSize = 12.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-          modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp))
+      Pill(if (t == Tab.Search) "⌕  Search" else t.label, vm.tab == t) {
+        if (vm.tab != t) { vm.tab = t; vm.vodCat = null; vm.focusKey = null }
       }
     }
   }
+}
+
+/** Rounded chip used for tabs, categories, seasons and sort options. */
+@Composable
+fun Pill(text: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+  Surface(
+    onClick = onClick,
+    modifier = modifier,
+    shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(50)),
+    colors = ClickableSurfaceDefaults.colors(
+      containerColor = if (selected) Color(0xFF2A2A33) else Color.Transparent, focusedContainerColor = Color.White,
+      contentColor = if (selected) Color.White else Muted, focusedContentColor = Color.Black,
+    ),
+    scale = ClickableSurfaceDefaults.scale(focusedScale = 1.05f),
+  ) {
+    Text(text, fontSize = 12.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium, maxLines = 1,
+      modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp))
+  }
+}
+
+@Composable
+fun RowTitle(text: String) {
+  Text(text, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.padding(start = Gutter, bottom = 8.dp))
+}
+
+// ---------- Shared card builders ----------
+
+@Composable
+fun LiveCard(vm: AppViewModel, ch: Channel, list: List<Channel>, key: String, restore: FocusRequester,
+             modifier: Modifier = Modifier, recentRow: Boolean = false) {
+  val context = LocalContext.current
+  var nn by remember { mutableStateOf<NowNext?>(null) }
+  if (recentRow) LaunchedEffect(ch.id) { nn = vm.epg(ch.id).nowNext() }
+  ChannelCard(
+    ch = ch,
+    fav = ch.id in vm.favs,
+    onClick = { vm.play(list, list.indexOf(ch)) },
+    onLongClick = {
+      if (recentRow) {
+        vm.removeRecent(ch.id)
+        Toast.makeText(context, "Removed from Continue Watching", Toast.LENGTH_SHORT).show()
+      } else {
+        vm.toggleFav(ch.id)
+        Toast.makeText(context, if (ch.id in vm.favs) "Added to My List" else "Removed from My List", Toast.LENGTH_SHORT).show()
+      }
+    },
+    onFocus = { vm.focusKey = key; vm.focusedChannel = ch; vm.focusedVod = null },
+    focusRequester = if (vm.focusKey == key) restore else null,
+    modifier = modifier,
+    progress = if (recentRow) nn?.progress ?: 0f else null,
+    sub = if (recentRow) nn?.now?.let { "Now: ${it.title}" } ?: " " else null,
+  )
+}
+
+@Composable
+fun VodCard(vm: AppViewModel, item: VodItem, key: String, restore: FocusRequester, modifier: Modifier = Modifier) {
+  val context = LocalContext.current
+  PosterCard(
+    item = item,
+    onClick = { vm.openDetail(item) },
+    onLongClick = {
+      vm.toggleVodList(item)
+      Toast.makeText(context, if (vm.inVodList(item.id)) "Added to My List" else "Removed from My List", Toast.LENGTH_SHORT).show()
+    },
+    onFocus = { vm.focusKey = key; vm.focusedVod = item; vm.focusedChannel = null },
+    focusRequester = if (vm.focusKey == key) restore else null,
+    modifier = modifier,
+    saved = vm.inVodList(item.id),
+  )
 }
 
 // ---------- Home ----------
 
-private data class RowSpec(val key: String, val title: String, val channels: List<Channel>, val recent: Boolean = false, val genre: String? = null)
-
 @Composable
 fun HomeScreen(vm: AppViewModel, restore: FocusRequester) {
-  val rows = buildList {
-    vm.recentChannels.takeIf { it.isNotEmpty() }?.let { add(RowSpec("cw", "Continue Watching", it, recent = true)) }
-    vm.favChannels.takeIf { it.isNotEmpty() }?.let { add(RowSpec("fav", "My Channels", it)) }
-    vm.byGenre.forEach { (g, list) -> add(RowSpec("g${g.id}", g.title, list, genre = g.id)) }
+  val context = LocalContext.current
+  val cw = vm.recent.filter { if (it.type == "vod") it.item != null else vm.channel(it.id) != null }
+  val favs = vm.favChannels
+  val liveRecent = vm.liveRecent
+  val firstKey = when {
+    cw.isNotEmpty() -> "cw:${cw[0].id}"
+    favs.isNotEmpty() -> "fav:${favs[0].id}"
+    vm.vodList.isNotEmpty() -> "myvod:${vm.vodList[0].id}"
+    else -> vm.byGenre.firstOrNull()?.let { (g, l) -> "g${g.id}:${l[0].id}" }
   }
-  LaunchedEffect(rows.isNotEmpty()) {
-    if (vm.focusKey == null && rows.isNotEmpty()) vm.focusKey = "${rows[0].key}:${rows[0].channels[0].id}"
-  }
-  // When Continue Watching / My Channels appear above, show them instead of leaving them half scrolled off.
+  LaunchedEffect(firstKey != null) { if (vm.focusKey == null && firstKey != null) vm.focusKey = firstKey }
+
+  // When Continue Watching / My List rows appear above, show them instead of leaving them half scrolled off.
   val listState = rememberLazyListState()
-  LaunchedEffect(rows.size) { if (listState.firstVisibleItemIndex <= 2) listState.scrollToItem(0) }
+  val personalRows = listOf(cw, favs, vm.vodList).count { it.isNotEmpty() }
+  LaunchedEffect(personalRows) { if (listState.firstVisibleItemIndex <= 2) listState.scrollToItem(0) }
+
   Column(Modifier.fillMaxSize()) {
     Hero(vm)
-    LazyColumn(
-      state = listState,
-      contentPadding = PaddingValues(bottom = 40.dp),
-      verticalArrangement = Arrangement.spacedBy(14.dp),
-      modifier = Modifier.fillMaxSize(),
-    ) {
-      items(rows, key = { it.key }) { row -> ChannelRow(vm, row, restore) }
+    LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 40.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+      if (cw.isNotEmpty()) item(key = "cw") {
+        Column {
+          RowTitle("Continue Watching")
+          LazyRow(contentPadding = PaddingValues(horizontal = Gutter), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            items(cw, key = { it.id }) { r ->
+              val key = "cw:${r.id}"
+              if (r.type == "vod") {
+                VodWideCard(
+                  r, onClick = { vm.resumeVod(r) },
+                  onLongClick = {
+                    vm.removeRecent(r.id)
+                    Toast.makeText(context, "Removed from Continue Watching", Toast.LENGTH_SHORT).show()
+                  },
+                  onFocus = { vm.focusKey = key; vm.focusedVod = r.item; vm.focusedChannel = null },
+                  focusRequester = if (vm.focusKey == key) restore else null,
+                )
+              } else {
+                LiveCard(vm, vm.channel(r.id)!!, liveRecent, key, restore, recentRow = true)
+              }
+            }
+          }
+        }
+      }
+      if (favs.isNotEmpty()) item(key = "fav") {
+        Column {
+          RowTitle("My Channels")
+          LazyRow(contentPadding = PaddingValues(horizontal = Gutter), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            items(favs, key = { it.id }) { LiveCard(vm, it, favs, "fav:${it.id}", restore) }
+          }
+        }
+      }
+      if (vm.vodList.isNotEmpty()) item(key = "myvod") {
+        Column {
+          RowTitle("My Movies & Shows")
+          LazyRow(contentPadding = PaddingValues(horizontal = Gutter), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            items(vm.vodList, key = { it.id }) { VodCard(vm, it, "myvod:${it.id}", restore) }
+          }
+        }
+      }
+      genreRows(vm, restore)
     }
   }
 }
 
-@Composable
-private fun ChannelRow(vm: AppViewModel, row: RowSpec, restore: FocusRequester) {
-  val context = LocalContext.current
-  val shown = row.channels.take(ROW_SIZE)
-  Column {
-    Text(row.title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.padding(start = Gutter, bottom = 8.dp))
-    LazyRow(
-      contentPadding = PaddingValues(horizontal = Gutter),
-      horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-      items(shown, key = { it.id }) { ch ->
-        val key = "${row.key}:${ch.id}"
-        var nn by remember { mutableStateOf<NowNext?>(null) }
-        if (row.recent) LaunchedEffect(ch.id) { nn = vm.epg(ch.id).nowNext() }
-        ChannelCard(
-          ch = ch,
-          fav = ch.id in vm.favs,
-          onClick = { vm.play(row.channels, row.channels.indexOf(ch)) },
-          onLongClick = {
-            if (row.recent) {
-              vm.removeRecent(ch.id)
-              Toast.makeText(context, "Removed from Continue Watching", Toast.LENGTH_SHORT).show()
-            } else {
-              vm.toggleFav(ch.id)
-              Toast.makeText(context, if (ch.id in vm.favs) "Added to My List" else "Removed from My List", Toast.LENGTH_SHORT).show()
-            }
-          },
-          onFocus = { vm.focusKey = key; vm.focusedChannel = ch },
-          focusRequester = if (vm.focusKey == key) restore else null,
-          progress = if (row.recent) nn?.progress ?: 0f else null,
-          sub = if (row.recent) nn?.now?.let { "Now: ${it.title}" } ?: " " else null,
-        )
-      }
-      if (row.genre != null && row.channels.size > ROW_SIZE) {
-        item(key = "more") {
-          SeeAllCard(row.channels.size, onFocus = { vm.focusKey = "${row.key}:more" },
-            focusRequester = if (vm.focusKey == "${row.key}:more") restore else null) {
-            vm.liveGenre = row.genre
+private fun LazyListScope.genreRows(vm: AppViewModel, restore: FocusRequester) {
+  items(vm.byGenre, key = { "g${it.first.id}" }) { (g, list) ->
+    val rowKey = "g${g.id}"
+    Column {
+      RowTitle(g.title)
+      LazyRow(contentPadding = PaddingValues(horizontal = Gutter), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        items(list.take(ROW_SIZE), key = { it.id }) { LiveCard(vm, it, list, "$rowKey:${it.id}", restore) }
+        if (list.size > ROW_SIZE) item(key = "more") {
+          SeeAllCard("${list.size} channels", Modifier.width(TileWidth).aspectRatio(16 / 9f).restorable(vm, "$rowKey:more", restore)) {
+            vm.liveGenre = g.id
             vm.tab = Tab.Live
             vm.focusKey = null
           }
@@ -164,12 +243,10 @@ private fun ChannelRow(vm: AppViewModel, row: RowSpec, restore: FocusRequester) 
 }
 
 @Composable
-private fun SeeAllCard(total: Int, onFocus: () -> Unit, focusRequester: FocusRequester?, onClick: () -> Unit) {
+fun SeeAllCard(caption: String, modifier: Modifier, onClick: () -> Unit) {
   Surface(
     onClick = onClick,
-    modifier = Modifier.width(TileWidth).aspectRatio(16 / 9f)
-      .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-      .onFocusChanged { if (it.isFocused) onFocus() },
+    modifier = modifier,
     shape = ClickableSurfaceDefaults.shape(CardShape),
     scale = ClickableSurfaceDefaults.scale(focusedScale = 1.08f),
     border = ClickableSurfaceDefaults.border(
@@ -180,15 +257,17 @@ private fun SeeAllCard(total: Int, onFocus: () -> Unit, focusRequester: FocusReq
   ) {
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
       Text("See all ›", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
-      Text("$total channels", fontSize = 10.sp, color = Muted)
+      Text(caption, fontSize = 10.sp, color = Muted)
     }
   }
 }
 
 /** Top of Home: details of whatever card has focus, Netflix-on-TV style. */
 @Composable
-private fun Hero(vm: AppViewModel) {
-  val ch = vm.focusedChannel ?: vm.recentChannels.firstOrNull() ?: vm.channels.firstOrNull() ?: return
+fun Hero(vm: AppViewModel) {
+  val vod = vm.focusedVod
+  if (vod != null) return VodHero(vm, vod)
+  val ch = vm.focusedChannel ?: vm.liveRecent.firstOrNull() ?: vm.channels.firstOrNull() ?: return
   val (title, badge) = parseName(ch.name)
   var nn by remember(ch.id) { mutableStateOf<NowNext?>(null) }
   LaunchedEffect(ch.id) {
@@ -197,7 +276,7 @@ private fun Hero(vm: AppViewModel) {
   }
   val h = hue(ch.name)
   Box(
-    Modifier.fillMaxWidth().height(190.dp).background(
+    Modifier.fillMaxWidth().height(HeroHeight).background(
       Brush.horizontalGradient(listOf(Bg, Color.hsl(h, 0.6f, 0.22f).copy(alpha = 0.9f)), startX = 300f),
     ),
   ) {
@@ -205,9 +284,9 @@ private fun Hero(vm: AppViewModel) {
       mark(title), fontSize = 150.sp, fontWeight = FontWeight.Black, color = Color.White.copy(alpha = 0.06f),
       maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.CenterEnd).padding(end = 20.dp),
     )
-    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Bg), startY = 250f)))
+    HeroFade()
     Column(Modifier.padding(start = Gutter, top = 8.dp).width(520.dp)) {
-      Text(title, fontSize = 30.sp, fontWeight = FontWeight.Black, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+      HeroTitle(title)
       Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
         if (ch.number > 0) Text("CH ${ch.number}", fontSize = 11.sp, color = Color(0xFFDDDDDD))
         if (badge != null) Badge(badge)
@@ -216,16 +295,55 @@ private fun Hero(vm: AppViewModel) {
       nn?.now?.let { now ->
         Text("Now · ${now.title}", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.White,
           maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 10.dp))
-        Box(Modifier.padding(top = 6.dp).width(200.dp).height(3.dp).background(Color.White.copy(alpha = 0.25f))) {
-          Box(Modifier.fillMaxWidth(nn!!.progress).fillMaxHeight().background(Accent))
-        }
-        val descr = now.descr.ifEmpty { nn?.next?.let { "Up next at ${hhmm(it.start)}: ${it.title}" } ?: "" }
-        Text(descr, fontSize = 11.sp, color = Color(0xFFCFCFD6), maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+        ProgressLine(nn!!.progress, Modifier.padding(top = 6.dp).width(200.dp))
+        HeroDescr(now.descr.ifEmpty { nn?.next?.let { "Up next at ${hhmm(it.start)}: ${it.title}" } ?: "" })
       }
     }
-    Text("Hold OK to add to My List", fontSize = 9.sp, color = Dim, modifier = Modifier.align(Alignment.BottomEnd).padding(end = Gutter, bottom = 4.dp))
+    HeroHint("Hold OK to add to My List")
   }
 }
+
+@Composable
+private fun VodHero(vm: AppViewModel, item: VodItem) {
+  val r = vm.recent.firstOrNull { it.id == item.id && it.type == "vod" }
+  Box(Modifier.fillMaxWidth().height(HeroHeight).background(Bg)) {
+    if (item.poster != null) {
+      AsyncImage(model = item.poster, contentDescription = null, contentScale = ContentScale.Crop, alignment = Alignment.TopCenter,
+        modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight().fillMaxWidth(0.55f))
+      Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(Bg, Bg, Bg.copy(alpha = 0.6f), Color.Transparent))))
+    }
+    HeroFade()
+    Column(Modifier.padding(start = Gutter, top = 8.dp).width(520.dp)) {
+      HeroTitle(item.name)
+      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+        if (item.rating > 0) Text("★ %.1f".format(item.rating), fontSize = 11.sp, color = Color(0xFF46D369), fontWeight = FontWeight.Bold)
+        if (item.year.isNotEmpty()) Text(item.year, fontSize = 11.sp, color = Color(0xFFDDDDDD))
+        if (item.isSeries) Badge("SERIES")
+        if (r != null && r.label.isNotEmpty()) Badge(r.label)
+        if (item.genres.isNotEmpty()) Text(item.genres, fontSize = 11.sp, color = Color(0xFFDDDDDD), maxLines = 1)
+      }
+      if (r != null && r.dur > 0) {
+        Text(r.epName.ifEmpty { "Continue watching" }, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+          color = Color.White, maxLines = 1, modifier = Modifier.padding(top = 10.dp))
+        ProgressLine(r.pos.toFloat() / r.dur, Modifier.padding(top = 6.dp).width(200.dp))
+      }
+      HeroDescr(item.descr)
+    }
+    HeroHint("OK for details  ·  Hold OK to add to My List")
+  }
+}
+
+@Composable private fun HeroFade() =
+  Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Bg), startY = 250f)))
+
+@Composable private fun HeroTitle(text: String) =
+  Text(text, fontSize = 30.sp, fontWeight = FontWeight.Black, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+
+@Composable private fun HeroDescr(text: String) =
+  Text(text, fontSize = 11.sp, color = Color(0xFFCFCFD6), maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+
+@Composable private fun BoxScope.HeroHint(text: String) =
+  Text(text, fontSize = 9.sp, color = Dim, modifier = Modifier.align(Alignment.BottomEnd).padding(end = Gutter, bottom = 4.dp))
 
 // ---------- Live TV: categories on the left, channels on the right ----------
 
@@ -241,13 +359,7 @@ fun LiveScreen(vm: AppViewModel, restore: FocusRequester) {
       verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
       items(vm.byGenre, key = { it.first.id }) { (g, chans) ->
-        val key = "genre:${g.id}"
-        GenreItem(
-          title = g.title, count = chans.size, selected = g.id == genre,
-          focusRequester = if (vm.focusKey == key) restore else null,
-          onFocus = { vm.focusKey = key },
-          onClick = { vm.liveGenre = g.id },
-        )
+        GenreItem(g.title, chans.size, g.id == genre, Modifier.restorable(vm, "genre:${g.id}", restore)) { vm.liveGenre = g.id }
       }
     }
     ChannelGrid(vm, list, restore, keyPrefix = "live:$genre", empty = "No channels")
@@ -255,12 +367,10 @@ fun LiveScreen(vm: AppViewModel, restore: FocusRequester) {
 }
 
 @Composable
-private fun GenreItem(title: String, count: Int, selected: Boolean, focusRequester: FocusRequester?, onFocus: () -> Unit, onClick: () -> Unit) {
+private fun GenreItem(title: String, count: Int, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
   Surface(
     onClick = onClick,
-    modifier = Modifier.fillMaxWidth()
-      .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-      .onFocusChanged { if (it.isFocused) onFocus() },
+    modifier = modifier.fillMaxWidth(),
     shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(6.dp)),
     scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
     colors = ClickableSurfaceDefaults.colors(
@@ -278,11 +388,7 @@ private fun GenreItem(title: String, count: Int, selected: Boolean, focusRequest
 
 @Composable
 fun ChannelGrid(vm: AppViewModel, list: List<Channel>, restore: FocusRequester, keyPrefix: String, empty: String) {
-  val context = LocalContext.current
-  if (list.isEmpty()) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(empty, color = Muted, fontSize = 13.sp) }
-    return
-  }
+  if (list.isEmpty()) return CenterNote(empty)
   LazyVerticalGrid(
     columns = GridCells.Adaptive(TileWidth),
     contentPadding = PaddingValues(start = 12.dp, end = Gutter, top = 4.dp, bottom = 40.dp),
@@ -290,43 +396,46 @@ fun ChannelGrid(vm: AppViewModel, list: List<Channel>, restore: FocusRequester, 
     verticalArrangement = Arrangement.spacedBy(14.dp),
     modifier = Modifier.fillMaxSize(),
   ) {
-    items(list, key = { it.id }) { ch ->
-      val key = "$keyPrefix:${ch.id}"
-      ChannelCard(
-        ch = ch,
-        fav = ch.id in vm.favs,
-        onClick = { vm.play(list, list.indexOf(ch)) },
-        onLongClick = {
-          vm.toggleFav(ch.id)
-          Toast.makeText(context, if (ch.id in vm.favs) "Added to My List" else "Removed from My List", Toast.LENGTH_SHORT).show()
-        },
-        onFocus = { vm.focusKey = key; vm.focusedChannel = ch },
-        focusRequester = if (vm.focusKey == key) restore else null,
-        modifier = Modifier.fillMaxWidth(),
-      )
+    items(list, key = { it.id }) { ch -> LiveCard(vm, ch, list, "$keyPrefix:${ch.id}", restore, Modifier.fillMaxWidth()) }
+  }
+}
+
+// ---------- My List ----------
+
+@Composable
+fun MyListScreen(vm: AppViewModel, restore: FocusRequester) {
+  val favs = vm.favChannels
+  val vods = vm.vodList
+  LaunchedEffect(Unit) {
+    if (vm.focusKey == null) vm.focusKey = favs.firstOrNull()?.let { "mylist:${it.id}" } ?: vods.firstOrNull()?.let { "mylistvod:${it.id}" }
+  }
+  if (favs.isEmpty() && vods.isEmpty()) return CenterNote("Your list is empty", "Hold OK on any channel, movie or show to add it.")
+  LazyColumn(contentPadding = PaddingValues(top = 10.dp, bottom = 40.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    if (favs.isNotEmpty()) item {
+      Column {
+        RowTitle("My Channels · ${favs.size}")
+        LazyRow(contentPadding = PaddingValues(horizontal = Gutter), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+          items(favs, key = { it.id }) { LiveCard(vm, it, favs, "mylist:${it.id}", restore) }
+        }
+      }
+    }
+    if (vods.isNotEmpty()) item {
+      Column {
+        RowTitle("My Movies & Shows · ${vods.size}")
+        LazyRow(contentPadding = PaddingValues(horizontal = Gutter), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+          items(vods, key = { it.id }) { VodCard(vm, it, "mylistvod:${it.id}", restore) }
+        }
+      }
     }
   }
 }
 
-// ---------- My List / placeholders ----------
-
 @Composable
-fun MyListScreen(vm: AppViewModel, restore: FocusRequester) {
-  val list = vm.favChannels
-  LaunchedEffect(Unit) { if (vm.focusKey == null && list.isNotEmpty()) vm.focusKey = "mylist:${list[0].id}" }
-  Column(Modifier.fillMaxSize().padding(start = Gutter - 12.dp)) {
-    Text("My Channels", fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = Color.White, modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 12.dp))
-    ChannelGrid(vm, list, restore, keyPrefix = "mylist", empty = "Your list is empty. Hold OK on any channel to add it.")
-  }
-}
-
-@Composable
-fun ComingSoon(text: String) {
+fun CenterNote(text: String, sub: String? = null) {
   Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-      Text(text, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
-      Spacer(Modifier.height(6.dp))
-      Text("Coming in the next build", fontSize = 12.sp, color = Muted)
+      Text(text, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
+      if (sub != null) { Spacer(Modifier.height(6.dp)); Text(sub, fontSize = 12.sp, color = Muted) }
     }
   }
 }

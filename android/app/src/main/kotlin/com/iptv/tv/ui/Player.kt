@@ -60,8 +60,6 @@ import com.iptv.tv.data.NowNext
 import com.iptv.tv.data.nowNext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
-import java.text.DateFormat
-import java.util.Date
 
 @OptIn(UnstableApi::class)
 @Composable
@@ -180,5 +178,3 @@ fun LivePlayer(vm: AppViewModel, play: LivePlay) {
     }
   }
 }
-
-private fun hhmm(ms: Long): String = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(ms))

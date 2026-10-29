@@ -70,8 +70,13 @@ We are building our own client: nicer channel browsing, fast search, favourites,
   then `adb install -r app/build/outputs/apk/debug/app-debug.apk`. TV: Sony BRAVIA BF1, Android 12 (API 31),
   armeabi-v7a, ~2.4 GB RAM, UI 1920x1080 @ density 320 (= 960x540 dp). Screenshot: `adb exec-out screencap -p`;
   wake from Ambient mode with `adb shell input keyevent KEYCODE_WAKEUP`. Drive with `input keyevent KEYCODE_DPAD_*`.
-- Stage 1 done (live TV verified on the TV). Next: stage 2 Movies & Shows (VOD, seasons/episodes, resume),
-  stage 3 search + polish.
+- Feature parity with the web player (verified on the TV 2026-10-29): Search tab (channels + VOD, Google TV keyboard
+  incl. voice; the box is a button until OK so the keyboard doesn't trap D-pad users), Movies & Shows (language
+  chips → poster rows → category grid w/ sort + paging), details overlay (`ui/VodScreens.kt`: Play/Resume, seasons,
+  episodes w/ progress), `ui/VodPlayer.kt` (◀▶ 10 s / hold 30 s, OK pause, CH+/⏭ next episode, auto-next, saves
+  position every 5 s), mixed Continue Watching, My List for channels + titles (Coil posters).
+- Portal login on TV: remembers the working endpoint in prefs, backs off on HTTP 429 instead of re-logging in
+  (repeated restarts during testing triggered the portal's rate limit).
 
 ## Status
 - **Working against the user's real portal (2026-10-29):** login, categories, ~10.9k channels (~12 MB `get_all_channels`), playback;

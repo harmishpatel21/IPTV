@@ -1,10 +1,12 @@
 package com.iptv.tv.data
 
 import android.util.JsonReader
+import android.util.Log
 import android.util.JsonToken
 import com.iptv.tv.BuildConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -18,6 +20,8 @@ import org.json.JSONObject
 import java.io.IOException
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
+
+private const val TAG = "Portal"
 
 const val MAG_USER_AGENT =
   "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3"
@@ -35,6 +39,9 @@ class Portal(
   private val deviceId: String = BuildConfig.DEVICE_ID,
   private val deviceId2: String = BuildConfig.DEVICE_ID2.ifEmpty { BuildConfig.DEVICE_ID },
   private val signature: String = BuildConfig.SIGNATURE,
+  /** API address that worked last time (saved by the app), so we don't probe candidates on every start. */
+  knownEndpoint: String? = null,
+  private val onEndpoint: (String) -> Unit = {},
 ) {
   val http: OkHttpClient = OkHttpClient.Builder()
     .connectTimeout(15, TimeUnit.SECONDS)
@@ -43,7 +50,7 @@ class Portal(
 
   private val loginLock = Mutex()
   @Volatile private var token: String? = null
-  @Volatile private var endpoint: String? = null
+  @Volatile private var endpoint: String? = knownEndpoint
 
   val origin: String get() = portalUrl.toHttpUrl().let { "${it.scheme}://${it.host}:${it.port}" }
 
@@ -79,9 +86,11 @@ class Portal(
     withContext(Dispatchers.IO) { http.newCall(request(ep, params)).execute().use(parse) }
 
   private fun js(resp: Response): Any? {
+    if (resp.code == 429) throw RateLimited()
     val text = resp.body.string()
     val obj = try { JSONObject(text) } catch (e: JSONException) {
-      throw IOException("Portal returned non-JSON (HTTP ${resp.code}): ${text.take(80)}")
+      val gist = text.replace(Regex("<[^>]*>"), " ").replace(Regex("\\s+"), " ").trim().take(60)
+      throw IOException("Portal returned HTTP ${resp.code}${if (gist.isNotEmpty()) " ($gist)" else ""}")
     }
     return obj.opt("js").takeUnless { it == JSONObject.NULL }
   }
@@ -91,16 +100,29 @@ class Portal(
 
   private suspend fun doLogin() {
     token = null
-    var lastErr: Exception? = null
-    for (ep in endpoint?.let { listOf(it) } ?: candidates()) {
-      try {
-        val t = (raw(ep, mapOf("type" to "stb", "action" to "handshake", "token" to ""), ::js) as? JSONObject)?.optString("token")
-        if (!t.isNullOrEmpty()) { endpoint = ep; token = t; break }
-        lastErr = IOException("No token from $ep")
-      } catch (e: CancellationException) { throw e } catch (e: Exception) { lastErr = e }
+    var firstErr: Exception? = null // the first failure is the informative one; later candidates usually just 404
+    val tries = endpoint?.let { listOf(it) + candidates().filter { c -> c != it } } ?: candidates()
+    for (ep in tries) {
+      // The portal answers rapid logins with HTTP 429: back off and retry the same address.
+      for (attempt in 0..2) {
+        try {
+          val t = (raw(ep, mapOf("type" to "stb", "action" to "handshake", "token" to ""), ::js) as? JSONObject)?.optString("token")
+          if (!t.isNullOrEmpty()) { token = t; break }
+          firstErr = firstErr ?: IOException("No token from $ep")
+          break
+        } catch (e: CancellationException) { throw e } catch (e: RateLimited) {
+          Log.w(TAG, "handshake $ep: rate limited")
+          firstErr = firstErr ?: e
+          delay(3000L * (attempt + 1))
+        } catch (e: Exception) { Log.w(TAG, "handshake $ep failed", e); firstErr = firstErr ?: e; break }
+      }
+      if (token != null) {
+        if (ep != endpoint) { endpoint = ep; onEndpoint(ep) }
+        break
+      }
     }
-    val ep = endpoint ?: throw IOException("Handshake failed: ${lastErr?.message}")
-    if (token == null) throw IOException("Handshake failed: ${lastErr?.message}")
+    val ep = endpoint
+    if (token == null || ep == null) throw IOException("Could not log in to the portal: ${firstErr?.message}")
 
     val profile = raw(ep, mapOf(
       "type" to "stb", "action" to "get_profile", "hd" to "1", "stb_type" to model, "sn" to serial,
@@ -120,7 +142,10 @@ class Portal(
     val seen = token
     return try {
       raw(endpoint!!, params, parse)
-    } catch (e: CancellationException) { throw e } catch (e: Exception) {
+    } catch (e: CancellationException) { throw e } catch (e: RateLimited) {
+      delay(3000) // busy, not logged out: logging in again would only make it worse
+      raw(endpoint!!, params, parse)
+    } catch (e: Exception) {
       login(seen)
       raw(endpoint!!, params, parse)
     }
@@ -196,10 +221,83 @@ class Portal(
     }
   }
 
+  // ---- Video Club (VOD). Series live in the same API: title → seasons → episodes → files. ----
+
+  suspend fun vodCategories(): List<VodCategory> {
+    val arr = call(mapOf("type" to "vod", "action" to "get_categories")) as JSONArray
+    return (0 until arr.length()).map { arr.getJSONObject(it) }
+      .filter { it.optString("id") != "*" }
+      .map { VodCategory(it.optString("id"), it.optString("title").replace(Regex("\\s+"), " ").trim()) }
+  }
+
+  private fun vodItem(v: JSONObject): VodItem {
+    val pic = v.optString("screenshot_uri")
+    return VodItem(
+      id = v.optString("id"), name = v.optString("name"), year = v.optString("year"),
+      descr = v.optString("description"),
+      poster = pic.takeIf { it.isNotEmpty() }?.let { if (it.startsWith("http")) it else origin + it },
+      rating = listOf(v.optDouble("rating_imdb"), v.optDouble("rating_kinopoisk")).firstOrNull { !it.isNaN() && it > 0 } ?: 0.0,
+      genres = v.optString("genres_str"), director = v.optString("director"), actors = v.optString("actors"),
+      country = v.optString("country"), isSeries = v.optString("is_series") == "1",
+      cat = v.optString("category_id"), cmd = v.optString("cmd"),
+    )
+  }
+
+  suspend fun vodList(cat: String?, page: Int, search: String = "", sort: String = "added"): VodPage {
+    val js = call(mapOf("type" to "vod", "action" to "get_ordered_list", "category" to (cat ?: "*"), "genre" to "*",
+      "sortby" to sort, "search" to search, "p" to page.toString())) as JSONObject
+    val total = js.optInt("total_items")
+    val per = js.optInt("max_page_items", 14).coerceAtLeast(1)
+    val data = js.optJSONArray("data") ?: JSONArray()
+    return VodPage(total, (total + per - 1) / per, page, (0 until data.length()).map { vodItem(data.getJSONObject(it)) })
+  }
+
+  /** Seasons/episodes/files are paged like everything else; fetch every page. */
+  private suspend fun vodAll(params: Map<String, String>): List<JSONObject> {
+    val out = ArrayList<JSONObject>()
+    for (p in 1..50) {
+      val js = call(mapOf("type" to "vod", "action" to "get_ordered_list", "genre" to "*") + params + ("p" to p.toString())) as JSONObject
+      val data = js.optJSONArray("data") ?: break
+      (0 until data.length()).forEach { out += data.getJSONObject(it) }
+      val per = js.optInt("max_page_items", 14).coerceAtLeast(1)
+      if (data.length() == 0 || p * per >= js.optInt("total_items")) break
+    }
+    return out
+  }
+
+  suspend fun seasons(item: VodItem): List<Season> =
+    vodAll(mapOf("movie_id" to item.id, "season_id" to "0", "episode_id" to "0", "category" to item.cat.ifEmpty { "*" }))
+      .filter { it.optBoolean("is_season") }
+      .map { Season(it.optString("id"), it.optString("season_number").toIntOrNull() ?: 0, it.optString("name")) }
+      .sortedBy { it.number }
+
+  suspend fun episodes(item: VodItem, season: Season): List<Episode> =
+    vodAll(mapOf("movie_id" to item.id, "season_id" to season.id, "episode_id" to "0", "category" to item.cat.ifEmpty { "*" }))
+      .filter { it.optBoolean("is_episode") }
+      .map { Episode(it.optString("id"), it.optString("series_number").toIntOrNull() ?: 0,
+        it.optString("series_name").ifEmpty { it.optString("name") }) }
+      .sortedBy { it.number }
+
+  /** Movies and episodes resolve the same way: list the title's files, then create_link on a file's cmd. */
+  suspend fun vodLink(item: VodItem, season: Season? = null, episode: Episode? = null): String {
+    val files = vodAll(mapOf("movie_id" to item.id, "season_id" to (season?.id ?: "0"),
+      "episode_id" to (episode?.id ?: "0"), "category" to item.cat.ifEmpty { "*" }))
+      .filter { it.optBoolean("is_file") && it.optString("cmd").isNotEmpty() }
+      .map { it.optString("cmd") }
+    for (c in files + listOfNotNull(item.cmd.takeIf { episode == null && it.isNotEmpty() })) {
+      val js = call(mapOf("type" to "vod", "action" to "create_link", "cmd" to c, "series" to "",
+        "forced_storage" to "", "disable_ad" to "0", "download" to "0")) as JSONObject
+      playable(js.optString("cmd"))?.let { return it }
+    }
+    throw IOException("Portal did not return a playable link for this title")
+  }
+
   private fun playable(cmd: String): String? =
     cmd.replace(Regex("^(ffmpeg|ffrt\\d*|auto)\\s+", RegexOption.IGNORE_CASE), "").trim()
       .takeIf { it.startsWith("http://") || it.startsWith("https://") }
 }
+
+class RateLimited : IOException("The portal is busy (too many requests) — try again in a minute")
 
 /** Read any scalar as a string (portals mix numbers and strings freely). */
 internal fun JsonReader.str(): String = when (peek()) {

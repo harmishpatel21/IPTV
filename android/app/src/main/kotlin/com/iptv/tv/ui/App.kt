@@ -22,39 +22,53 @@ import kotlinx.coroutines.delay
 
 @Composable
 fun App(vm: AppViewModel = viewModel()) {
-  // One requester, attached to whichever card was focused last, so focus returns there after the player.
+  // One requester for the browse screens and one for the details overlay. Each is attached to whichever
+  // element was focused last (vm.focusKey / vm.detailFocusKey), so focus returns there after an overlay closes.
   val restore = remember { FocusRequester() }
-  val playing = vm.playing
+  val detailRestore = remember { FocusRequester() }
+  val detail = vm.detail
 
   MaterialTheme(colorScheme = darkColorScheme(primary = Accent, background = Bg, surface = Bg)) {
     Box(Modifier.fillMaxSize().background(Bg)) {
-      // The browse UI stays composed under the player, so scroll position and focus survive.
+      // Browse UI stays composed under overlays, so scroll position and focus survive.
       Column(Modifier.fillMaxSize()) {
         TopNav(vm)
         when (vm.tab) {
           Tab.Home -> HomeScreen(vm, restore)
+          Tab.Search -> SearchScreen(vm, restore)
           Tab.Live -> LiveScreen(vm, restore)
-          Tab.Movies -> ComingSoon("Movies & Shows")
+          Tab.Movies -> MoviesScreen(vm, restore)
           Tab.MyList -> MyListScreen(vm, restore)
         }
       }
       vm.status?.let {
         Text(it, color = Muted, fontSize = 14.sp, modifier = Modifier.align(Alignment.Center).padding(24.dp))
       }
-      if (playing != null) LivePlayer(vm, playing)
+      if (detail != null) DetailScreen(vm, detail, detailRestore)
+      vm.playing?.let { LivePlayer(vm, it) }
+      vm.vodPlaying?.let { VodPlayer(vm, it) }
     }
   }
 
-  BackHandler(enabled = playing == null && vm.tab != Tab.Home) { vm.tab = Tab.Home; vm.focusKey = null }
+  // Back: players handle their own; then details → category grid → Home.
+  val overlay = vm.overlayOpen
+  BackHandler(enabled = !overlay && detail != null) { vm.closeDetail() }
+  BackHandler(enabled = !overlay && detail == null && vm.tab == Tab.Movies && vm.vodCat != null) {
+    vm.focusKey = "vrow:${vm.vodCat!!.id}:more"
+    vm.vodCat = null
+  }
+  BackHandler(enabled = !overlay && detail == null && vm.vodCat == null && vm.tab != Tab.Home) {
+    vm.tab = Tab.Home
+    vm.focusKey = null
+  }
 
-  LaunchedEffect(playing == null, vm.focusKey != null, vm.tab) {
-    if (playing == null && vm.focusKey != null) {
-      // The target card may not be laid out yet (first launch, tab switch): retry briefly.
-      repeat(15) {
-        delay(100)
-        if (runCatching { restore.requestFocus() }.isSuccess) return@LaunchedEffect
-      }
+  LaunchedEffect(overlay, detail?.id, vm.focusKey != null, vm.tab, vm.vodCat?.id) {
+    if (overlay) return@LaunchedEffect
+    val target = if (detail != null) detailRestore else if (vm.focusKey != null) restore else return@LaunchedEffect
+    // The target may not be laid out yet (first launch, tab switch, overlay just closed): retry briefly.
+    repeat(15) {
+      delay(100)
+      if (runCatching { target.requestFocus() }.isSuccess) return@LaunchedEffect
     }
   }
 }
-

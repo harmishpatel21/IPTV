@@ -30,7 +30,11 @@ import androidx.tv.material3.Border
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
+import androidx.compose.ui.layout.ContentScale
+import coil3.compose.AsyncImage
 import com.iptv.tv.data.Channel
+import com.iptv.tv.data.Recent
+import com.iptv.tv.data.VodItem
 
 val Bg = Color(0xFF0B0B0F)
 val Accent = Color(0xFFE50914)
@@ -133,3 +137,100 @@ fun Badge(text: String) {
 }
 
 val TileWidth = 168.dp
+val PosterWidth = 112.dp
+
+private val cardBorder @Composable get() = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Color.White), shape = CardShape))
+private val cardColors @Composable get() = ClickableSurfaceDefaults.colors(
+  containerColor = Color.Transparent, focusedContainerColor = Color.Transparent,
+  contentColor = Color.White, focusedContentColor = Color.White,
+)
+
+@Composable
+fun ProgressLine(progress: Float, modifier: Modifier = Modifier) {
+  Box(modifier.fillMaxWidth().height(3.dp).background(Color.White.copy(alpha = 0.25f))) {
+    Box(Modifier.fillMaxWidth(progress.coerceIn(0f, 1f)).fillMaxHeight().background(Accent))
+  }
+}
+
+/** Movie/show poster (2:3) with the title underneath. */
+@Composable
+fun PosterCard(
+  item: VodItem,
+  onClick: () -> Unit,
+  onLongClick: () -> Unit,
+  onFocus: () -> Unit,
+  modifier: Modifier = Modifier,
+  focusRequester: FocusRequester? = null,
+  saved: Boolean = false,
+) {
+  Column(modifier.width(PosterWidth)) {
+    Surface(
+      onClick = onClick,
+      onLongClick = onLongClick,
+      modifier = Modifier.fillMaxWidth().aspectRatio(2 / 3f)
+        .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+        .onFocusChanged { if (it.isFocused) onFocus() },
+      shape = ClickableSurfaceDefaults.shape(CardShape),
+      scale = ClickableSurfaceDefaults.scale(focusedScale = 1.08f),
+      border = cardBorder,
+      colors = cardColors,
+    ) {
+      Box(Modifier.fillMaxSize().background(tileBrush(hue(item.name)))) {
+        Text(item.name, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, maxLines = 4, overflow = TextOverflow.Ellipsis,
+          modifier = Modifier.align(Alignment.BottomStart).padding(8.dp))
+        if (item.poster != null) {
+          AsyncImage(model = item.poster, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        }
+        if (item.isSeries) {
+          Text("SERIES", fontSize = 7.sp, fontWeight = FontWeight.ExtraBold, color = Color.White,
+            modifier = Modifier.padding(6.dp).background(Accent, RoundedCornerShape(2.dp)).padding(horizontal = 4.dp, vertical = 1.dp))
+        }
+        if (saved) Text("★", fontSize = 12.sp, color = Color(0xFFFFCF33), modifier = Modifier.align(Alignment.TopEnd).padding(6.dp))
+      }
+    }
+    Text(listOf(item.name, item.year).filter { it.isNotEmpty() }.joinToString(" · "), fontSize = 9.sp, color = Muted,
+      maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 5.dp))
+  }
+}
+
+/** Continue Watching card for a movie or episode: poster artwork, episode badge, progress. */
+@Composable
+fun VodWideCard(
+  r: Recent,
+  onClick: () -> Unit,
+  onLongClick: () -> Unit,
+  onFocus: () -> Unit,
+  focusRequester: FocusRequester? = null,
+) {
+  val item = r.item ?: return
+  Column(Modifier.width(TileWidth)) {
+    Surface(
+      onClick = onClick,
+      onLongClick = onLongClick,
+      modifier = Modifier.fillMaxWidth().aspectRatio(16 / 9f)
+        .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+        .onFocusChanged { if (it.isFocused) onFocus() },
+      shape = ClickableSurfaceDefaults.shape(CardShape),
+      scale = ClickableSurfaceDefaults.scale(focusedScale = 1.08f),
+      border = cardBorder,
+      colors = cardColors,
+    ) {
+      Box(Modifier.fillMaxSize().background(tileBrush(hue(item.name)))) {
+        if (item.poster != null) {
+          AsyncImage(model = item.poster, contentDescription = null, contentScale = ContentScale.Crop,
+            alignment = Alignment.TopCenter, modifier = Modifier.fillMaxSize())
+        }
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f)), startY = 80f)))
+        Row(Modifier.align(Alignment.BottomStart).padding(10.dp, 9.dp), verticalAlignment = Alignment.Bottom) {
+          Text(item.name, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            lineHeight = 13.sp, modifier = Modifier.weight(1f))
+          if (r.label.isNotEmpty()) Badge(r.label)
+        }
+        ProgressLine(if (r.dur > 0) r.pos.toFloat() / r.dur else 0f, Modifier.align(Alignment.BottomStart))
+      }
+    }
+    val left = if (r.dur > 0) "${((r.dur - r.pos) / 60_000).coerceAtLeast(1)} min left" else ""
+    Text(listOf(r.epName, left).filter { it.isNotEmpty() }.joinToString(" · ").ifEmpty { " " }, fontSize = 10.sp, color = Muted,
+      maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 5.dp))
+  }
+}
